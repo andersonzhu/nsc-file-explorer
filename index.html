@@ -187,7 +187,15 @@ th.flash{animation:flash 1.6s ease-out}
 .nomatch{position:absolute;left:0;right:0;top:120px;display:flex;justify-content:center;align-items:center;gap:10px;color:var(--ink-2);padding:0 16px;flex-wrap:wrap;text-align:center}
 
 /* record inspector */
-.detail{flex:0 0 410px;display:flex;flex-direction:column}
+/* --dw is the width you dragged the panel to; until then it grows with the window */
+.detail{flex:0 0 min(var(--dw,clamp(380px,36vw,560px)),calc(100vw - 420px));display:flex;flex-direction:column}
+.detail>*{flex:none}
+.detail>.dbody{flex:1 1 auto}
+.dsize{position:absolute;left:0;top:0;bottom:0;width:9px;z-index:6;cursor:col-resize;touch-action:none}
+.dsize::after{content:"";position:absolute;left:3px;top:50%;width:3px;height:40px;margin-top:-20px;border-radius:2px;background:var(--rule-2);opacity:0;transition:opacity .15s}
+.dsize:hover::after,.dsize:focus-visible::after,.dsize.on::after{opacity:1;background:var(--accent)}
+.dsize:focus-visible{outline:none}
+body.resizing{cursor:col-resize;user-select:none}
 .dhead{display:flex;align-items:center;gap:6px;padding:10px 12px;border-bottom:1px solid var(--rule)}
 .dt{flex:1;min-width:0}
 .dtitle{font-weight:600;font-size:14px}
@@ -402,12 +410,12 @@ div.seg .bn.w{background:var(--warn-soft);color:var(--warn)}
 .toast.bad{background:var(--bad);color:#fff}
 .toast .tbtn{margin-left:14px;border:0;background:none;padding:0;color:inherit;font:inherit;font-weight:600;text-decoration:underline;cursor:pointer}
 
-@media (max-width:1100px){.detail{flex-basis:360px}}
 @media (max-width:860px){
   .app{height:auto;min-height:100%}
   .work{flex-direction:column}
   .gridsheet{flex:none;height:62vh;min-height:340px}
   .detail{flex:none}
+  .dsize{display:none}
   .dbody{overflow:visible}
   .fbright{margin-left:0}
   .layoutpick{flex-wrap:wrap}
@@ -470,6 +478,7 @@ div.seg .bn.w{background:var(--warn-soft);color:var(--warn)}
       <div class="fview" id="fview" hidden></div>
     </section>
     <aside class="sheet detail" id="detail" hidden aria-label="Record details">
+      <div class="dsize" id="dSize" role="separator" aria-orientation="vertical" aria-label="Resize record details" tabindex="0" title="Drag to resize. Double-click to reset."></div>
       <div class="dhead">
         <div class="dt"><div class="dtitle" id="dTitle"></div><div class="dsub" id="dSub"></div></div>
         <button class="iconbtn" id="dPrev" type="button" aria-label="Previous record"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3.5 8.5 7 5l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -2802,6 +2811,35 @@ $("#gbody").addEventListener("dblclick", (e) => {
   if (cur().selected !== +tr.dataset.r) selectRow(+tr.dataset.r);
   startEdit();
 });
+// Dragging the record panel's left edge sets its width, remembered in this browser. Double-click resets it.
+function setDetailWidth(w, save) {
+  const el = $("#detail");
+  if (w == null) el.style.removeProperty("--dw");
+  else el.style.setProperty("--dw", Math.round(Math.max(320, Math.min(w, window.innerWidth - 420))) + "px");
+  if (save) store.set("detailW", w == null ? null : Math.round(el.getBoundingClientRect().width));
+}
+$("#dSize").addEventListener("pointerdown", (e) => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  const h = e.currentTarget, right = $("#detail").getBoundingClientRect().right;
+  h.setPointerCapture(e.pointerId);
+  h.classList.add("on");
+  document.body.classList.add("resizing");
+  const move = (ev) => setDetailWidth(right - ev.clientX, false);
+  const up = () => {
+    h.classList.remove("on");
+    document.body.classList.remove("resizing");
+    h.removeEventListener("pointermove", move); h.removeEventListener("pointerup", up); h.removeEventListener("pointercancel", up);
+    setDetailWidth(right - $("#detail").getBoundingClientRect().left, true);
+  };
+  h.addEventListener("pointermove", move); h.addEventListener("pointerup", up); h.addEventListener("pointercancel", up);
+});
+$("#dSize").addEventListener("dblclick", () => setDetailWidth(null, true));
+$("#dSize").addEventListener("keydown", (e) => {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  e.preventDefault();
+  setDetailWidth($("#detail").getBoundingClientRect().width + (e.key === "ArrowLeft" ? 40 : -40), true);
+});
 $("#dPrev").addEventListener("click", () => stepRecord(-1));
 $("#dNext").addEventListener("click", () => stepRecord(1));
 $("#dClose").addEventListener("click", async () => {
@@ -2949,6 +2987,7 @@ $("#swLabels").checked = S.labels;
 $("#swUnused").checked = S.showUnused;
 $("#swMask").checked = S.mask;
 $("#swEmpty").checked = S.showEmpty;
+if (typeof store.get("detailW", null) === "number") setDetailWidth(store.get("detailW", null), false);
 try { loadSamples(); } catch (err) { renderAll(); }
 if (!S.ds.length) renderAll();
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (cur() && S.view === "records") { HEADH = $("#ghead").offsetHeight; renderRows(true); } });
